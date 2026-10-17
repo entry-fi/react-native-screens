@@ -181,8 +181,11 @@
   UINavigationController *navigationController = (UINavigationController *)secondaryViewController;
 
   /** The assumption is that it should come in a single batch and it won't cause any delays in rendering the content. */
-  [navigationController setNavigationBarHidden:YES animated:NO];
-  [navigationController setNavigationBarHidden:NO animated:NO];
+  // Entry fork: restore the previous state instead of forcing the bar visible, so a column whose
+  // `Split.HeaderConfig` hides the bar (a column hosting its own native stack) keeps it hidden.
+  BOOL wasHidden = navigationController.navigationBarHidden;
+  [navigationController setNavigationBarHidden:!wasHidden animated:NO];
+  [navigationController setNavigationBarHidden:wasHidden animated:NO];
 }
 
 #pragma mark - Helpers

@@ -52,6 +52,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithSplitScreenComponentView:(RNSSplitScreenComponentView *)splitScreenComponentView;
 
+/**
+ * @brief Re-applies the header config's bar visibility to the navigation controller the screen currently sits in.
+ * Entry fork: called after collapse/expand, when UIKit moves the screen between column navigation controllers
+ * without a new viewWillAppear.
+ */
+- (void)refreshNavigationBarVisibility;
+
 #pragma mark - Signals
 
 /**

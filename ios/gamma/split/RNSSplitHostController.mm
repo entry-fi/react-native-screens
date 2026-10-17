@@ -188,6 +188,20 @@
   [navigationController setNavigationBarHidden:wasHidden animated:NO];
 }
 
+- (void)refreshColumnNavigationBarVisibility
+{
+  for (UIViewController *columnController in self.viewControllers) {
+    if (![columnController isKindOfClass:UINavigationController.class]) {
+      continue;
+    }
+    for (UIViewController *controller in ((UINavigationController *)columnController).viewControllers) {
+      if ([controller isKindOfClass:RNSSplitScreenController.class]) {
+        [(RNSSplitScreenController *)controller refreshNavigationBarVisibility];
+      }
+    }
+  }
+}
+
 #pragma mark - Helpers
 
 /**
@@ -402,11 +416,13 @@
 
 - (void)splitViewControllerDidCollapse:(UISplitViewController *)svc
 {
+  [self refreshColumnNavigationBarVisibility];
   [self.eventsDelegate splitHostControllerDidCollapse:self];
 }
 
 - (void)splitViewControllerDidExpand:(UISplitViewController *)svc
 {
+  [self refreshColumnNavigationBarVisibility];
   [self.eventsDelegate splitHostControllerDidExpand:self];
 }
 

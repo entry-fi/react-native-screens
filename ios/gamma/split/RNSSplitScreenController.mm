@@ -90,6 +90,13 @@
 
 #pragma mark - Events
 
+- (void)refreshNavigationBarVisibility
+{
+  if (_splitScreenComponentView.headerConfig != nil) {
+    [_headerCoordinator updateNavigationBarVisibilityAnimated:NO];
+  }
+}
+
 - (void)viewWillAppear:(BOOL)animated
 {
   [super viewWillAppear:animated];

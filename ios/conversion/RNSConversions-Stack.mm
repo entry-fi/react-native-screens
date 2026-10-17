@@ -10,35 +10,48 @@ template <>
 RNSStackScreenActivityMode convert(react::RNSStackScreenActivityMode mode)
 {
   return static_cast<RNSStackScreenActivityMode>(mode);
-};
+}
 
 template <>
-RNSHeaderItemPlacement convert(react::RNSStackHeaderItemIOSPlacement placement)
+RNSHeaderItemPlacement convert(react::RNSHeaderItemIOSPlacement placement)
 {
   switch (placement) {
-    case react::RNSStackHeaderItemIOSPlacement::Leading:
+    case react::RNSHeaderItemIOSPlacement::Leading:
       return RNSHeaderItemPlacementLeading;
-    case react::RNSStackHeaderItemIOSPlacement::Trailing:
+    case react::RNSHeaderItemIOSPlacement::Trailing:
       return RNSHeaderItemPlacementTrailing;
-    case react::RNSStackHeaderItemIOSPlacement::Title:
+    case react::RNSHeaderItemIOSPlacement::Title:
       return RNSHeaderItemPlacementTitle;
-    case react::RNSStackHeaderItemIOSPlacement::Subtitle:
+    case react::RNSHeaderItemIOSPlacement::Subtitle:
       return RNSHeaderItemPlacementSubtitle;
-    case react::RNSStackHeaderItemIOSPlacement::LargeSubtitle:
+    case react::RNSHeaderItemIOSPlacement::LargeSubtitle:
       return RNSHeaderItemPlacementLargeSubtitle;
   }
-};
+}
 
 template <>
-RNSHeaderItemSpacerPlacement convert(react::RNSStackHeaderItemSpacerIOSPlacement placement)
+RNSHeaderItemSpacerPlacement convert(react::RNSHeaderItemSpacerIOSPlacement placement)
 {
   switch (placement) {
-    case react::RNSStackHeaderItemSpacerIOSPlacement::Leading:
+    case react::RNSHeaderItemSpacerIOSPlacement::Leading:
       return RNSHeaderItemSpacerPlacementLeading;
-    case react::RNSStackHeaderItemSpacerIOSPlacement::Trailing:
+    case react::RNSHeaderItemSpacerIOSPlacement::Trailing:
       return RNSHeaderItemSpacerPlacementTrailing;
   }
-};
+}
+
+template <>
+UINavigationItemBackButtonDisplayMode convert(react::RNSHeaderConfigIOSBackButtonDisplayMode displayMode)
+{
+  switch (displayMode) {
+    case react::RNSHeaderConfigIOSBackButtonDisplayMode::Default:
+      return UINavigationItemBackButtonDisplayModeDefault;
+    case react::RNSHeaderConfigIOSBackButtonDisplayMode::Generic:
+      return UINavigationItemBackButtonDisplayModeGeneric;
+    case react::RNSHeaderConfigIOSBackButtonDisplayMode::Minimal:
+      return UINavigationItemBackButtonDisplayModeMinimal;
+  }
+}
 
 }; // namespace rnscreens::conversion
 

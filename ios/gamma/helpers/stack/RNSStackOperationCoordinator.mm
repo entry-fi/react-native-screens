@@ -1,0 +1,83 @@
+#import "RNSStackOperationCoordinator.h"
+#import "RNSStackNavigationController.h"
+#import "RNSStackOperation.h"
+#import "RNSStackScreenProviding.h"
+
+@implementation RNSStackOperationCoordinator {
+  NSMutableArray<RNSPushOperation *> *_Nonnull _pendingPushOperations;
+  NSMutableArray<RNSPopOperation *> *_Nonnull _pendingPopOperations;
+}
+
+- (instancetype)init
+{
+  if (self = [super init]) {
+    [self initState];
+  }
+  return self;
+}
+
+- (void)initState
+{
+  _pendingPushOperations = [NSMutableArray array];
+  _pendingPopOperations = [NSMutableArray array];
+}
+
+- (BOOL)hasPendingOperations
+{
+  return _pendingPushOperations.count > 0 || _pendingPopOperations.count > 0;
+}
+
+- (void)addPushOperation:(nonnull UIView<RNSStackScreenProviding> *)stackScreen
+{
+  RNSPushOperation *operation = [[RNSPushOperation alloc] initWithScreen:stackScreen];
+  [_pendingPushOperations addObject:operation];
+}
+
+- (void)addPopOperation:(nonnull UIView<RNSStackScreenProviding> *)stackScreen
+{
+  RNSPopOperation *operation = [[RNSPopOperation alloc] initWithScreen:stackScreen];
+  [_pendingPopOperations addObject:operation];
+}
+
+- (void)executePendingOperationsIfNeeded:(nonnull RNSStackNavigationController *)controller
+                     withRenderedScreens:(nonnull NSMutableArray<UIView<RNSStackScreenProviding> *> *)renderedScreens
+{
+  if (![self hasPendingOperations]) {
+    return;
+  }
+
+  // Unmounted screens are no longer in renderedScreens. Their pop order still follows the native stack.
+  auto orderedPops = [_pendingPopOperations
+      sortedArrayUsingComparator:^NSComparisonResult(RNSPopOperation *obj1, RNSPopOperation *obj2) {
+        return [@([controller.viewControllers indexOfObject:obj1.stackScreen.controller])
+            compare:@([controller.viewControllers indexOfObject:obj2.stackScreen.controller])];
+      }];
+  auto popOperations = [[orderedPops reverseObjectEnumerator] allObjects];
+
+  for (RNSStackOperation *operation in popOperations) {
+    [controller enqueuePopOperation:static_cast<RNSPopOperation *>(operation).stackScreen];
+  }
+
+  auto pushOperations = [self orderedOperations:(NSMutableArray<RNSStackOperation *> *)_pendingPushOperations
+                                withIndicesFrom:renderedScreens];
+
+  for (RNSStackOperation *operation in pushOperations) {
+    [controller enqueuePushOperation:static_cast<RNSPushOperation *>(operation).stackScreen];
+  }
+
+  [controller performContainerUpdateIfNeeded];
+
+  [_pendingPopOperations removeAllObjects];
+  [_pendingPushOperations removeAllObjects];
+}
+
+- (NSArray<RNSStackOperation *> *)orderedOperations:(nonnull NSMutableArray<RNSStackOperation *> *)operations
+                                    withIndicesFrom:
+                                        (nonnull NSMutableArray<UIView<RNSStackScreenProviding> *> *)stackScreens
+{
+  return [operations sortedArrayUsingComparator:^NSComparisonResult(RNSStackOperation *obj1, RNSStackOperation *obj2) {
+    return [@([stackScreens indexOfObject:obj1.stackScreen]) compare:@([stackScreens indexOfObject:obj2.stackScreen])];
+  }];
+}
+
+@end

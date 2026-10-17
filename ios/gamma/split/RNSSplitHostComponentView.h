@@ -3,7 +3,7 @@
 #import "RNSDefines.h"
 #import "RNSEnums.h"
 #import "RNSReactBaseView.h"
-#import "RNSSplitHostComponentEventEmitter.h"
+#import "RNSSplitHostProviders.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -17,9 +17,11 @@ NS_ASSUME_NONNULL_BEGIN
  * Responsible for managing multi-column layouts via associated native UISplitViewController.
  * Manages updates to the layout properties, column configuration, and event emission.
  */
-@interface RNSSplitHostComponentView : RNSReactBaseView
+@interface RNSSplitHostComponentView : RNSReactBaseView <RNSSplitHostAppearanceProvider, RNSSplitHostBehaviorProvider>
 
 - (nonnull NSMutableArray<RNSSplitScreenComponentView *> *)reactSubviews;
+
+- (void)splitScreenDidChangeActivityMode:(nonnull RNSSplitScreenComponentView *)screen;
 
 @property (nonatomic, nonnull, strong, readonly) RNSSplitHostController *splitHostController;
 
@@ -29,7 +31,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /**
  * @category Props
- * @brief Definitions for React Native props.
+ * @brief Definitions for React Native props. They back the appearance and behavior providers of the Split host
+ * controller.
  */
 @interface RNSSplitHostComponentView ()
 
@@ -63,18 +66,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, readonly) RNSOrientation orientation;
 @property (nonatomic, readonly) UIUserInterfaceStyle colorScheme;
-
-@end
-
-#pragma mark - Events
-
-/**
- * @category Events
- * @brief APIs related to event emission to React Native.
- */
-@interface RNSSplitHostComponentView ()
-
-- (nonnull RNSSplitHostComponentEventEmitter *)reactEventEmitter;
 
 @end
 

@@ -7,6 +7,9 @@
 #import <optional>
 #import "RNSDefines.h"
 #import "RNSEnums.h"
+#if RNS_GAMMA_ENABLED
+#import "RNSStackScreenProviding.h"
+#endif // RNS_GAMMA_ENABLED
 #import "RNSTabsNavigationState.h"
 
 #import <folly/dynamic.h>
@@ -138,6 +141,11 @@ UIUserInterfaceStyle UIUserInterfaceStyleFromHostProp(react::RNSSplitHostColorSc
 #pragma mark SplitScreen props
 
 RNSSplitScreenColumnType RNSSplitScreenColumnTypeFromScreenProp(react::RNSSplitScreenColumnType columnType);
+
+#if RNS_GAMMA_ENABLED
+RNSStackScreenActivityMode RNSStackScreenActivityModeFromSplitScreenProp(
+    react::RNSSplitScreenActivityMode activityMode);
+#endif // RNS_GAMMA_ENABLED
 
 }; // namespace rnscreens::conversion
 

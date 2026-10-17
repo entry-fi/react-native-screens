@@ -3,35 +3,52 @@
 #import <UIKit/UIKit.h>
 #import "RNSOrientationProviding.h"
 #import "RNSReactMountingTransactionObserving.h"
+#import "RNSSplitHostProviders.h"
+#import "RNSStackScreenProviding.h"
 
-@class RNSSplitHostComponentView;
+@class RNSSplitHostController;
 
 NS_ASSUME_NONNULL_BEGIN
+
+/**
+ * @protocol RNSSplitHostControllerEventsDelegate
+ * @brief Receives UISplitViewController lifecycle notifications from the Split host controller.
+ */
+@protocol RNSSplitHostControllerEventsDelegate <NSObject>
+
+- (void)splitHostControllerDidCollapse:(RNSSplitHostController *)controller;
+- (void)splitHostControllerDidExpand:(RNSSplitHostController *)controller;
+- (void)splitHostController:(RNSSplitHostController *)controller
+    willChangeDisplayModeFrom:(UISplitViewControllerDisplayMode)fromDisplayMode
+                           to:(UISplitViewControllerDisplayMode)toDisplayMode;
+- (void)splitHostControllerDidHideInspector:(RNSSplitHostController *)controller;
+
+@end
 
 /**
  * @class RNSSplitHostController
  * @brief A controller associated with the RN native component representing Split host.
  *
- * Manages a collection of RNSSplitScreenComponentView instances,
- * synchronizes appearance settings with props, observes component lifecycle, and emits events.
+ * Installs the column controllers, synchronizes appearance settings with the configuration exposed by the providers,
+ * observes the UISplitViewController lifecycle and reports it to the delegate.
  */
 @interface RNSSplitHostController
     : UISplitViewController <RNSReactMountingTransactionObserving, RNSOrientationProviding>
+
+@property (nonatomic, weak, nullable) id<RNSSplitHostControllerEventsDelegate> eventsDelegate;
+@property (nonatomic, weak, nullable) id<RNSSplitHostAppearanceProvider> appearanceProvider;
+@property (nonatomic, weak, nullable) id<RNSSplitHostBehaviorProvider> behaviorProvider;
 
 /**
  * @brief Initializes the Split host controller with provided style.
  *
  * The style for the Split component can be passed only in the initialization method and cannot be changed dynamically.
  *
- * @param splitHostComponentView The view managed by this controller.
  * @param numberOfColumns Expected number of visible columns.
  */
-- (instancetype)initWithSplitHostComponentView:(RNSSplitHostComponentView *)splitHostComponentView
-                               numberOfColumns:(NSInteger)numberOfColumns;
+- (instancetype)initWithNumberOfColumns:(NSInteger)numberOfColumns;
 
 #pragma mark - Signals
-
-- (void)setNeedsUpdateOfChildViewControllers;
 
 - (void)setNeedsAppearanceUpdate;
 
@@ -41,18 +58,17 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)setNeedsOrientationUpdate;
 
-#pragma mark - Updating
-
-- (void)updateChildViewControllersIfNeeded;
+#pragma mark - Screens
 
 /**
- * @brief Creates and attaches the Split child controllers based on the current React subviews.
- *
- * It validates constraints for Split hierarchy and it will crash after recognizing an invalid state,
- * e. g. dynamically changed number of columns or number of columns that isn't between defined bounds.
- * If Split constraints are met, it attaches SplitScreen representatives to SplitHost component.
+ * @brief Routes a screen mounted in the host to its column. `column` is the index of the column, or `-1` for the
+ * inspector; `index` is the position of the screen among the screens of that column.
  */
-- (void)updateChildViewControllers;
+- (void)insertScreen:(UIView<RNSStackScreenProviding> *)screen inColumn:(NSInteger)column atIndex:(NSInteger)index;
+- (void)removeScreen:(UIView<RNSStackScreenProviding> *)screen inColumn:(NSInteger)column;
+- (void)screenDidChangeActivityMode:(UIView<RNSStackScreenProviding> *)screen inColumn:(NSInteger)column;
+
+#pragma mark - Updating
 
 /**
  * @brief Triggering appearance updates on secondary column's UINavigationBar component

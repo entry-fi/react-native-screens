@@ -4,27 +4,21 @@
 #import "RNSDefines.h"
 #import "RNSSplitAppearanceApplicator.h"
 #import "RNSSplitAppearanceCoordinator.h"
-#import "RNSSplitHostComponentView.h"
-#import "RNSSplitNavigationController.h"
-#import "RNSSplitNavigationControllerFrameOriginChangeDelegate.h"
-#import "RNSSplitScreenComponentView.h"
+#import "RNSSplitColumnController.h"
+#import "RNSSplitColumnControllerDelegate.h"
 #import "RNSSplitScreenController.h"
+#import "RNSStackNavigationController.h"
 
-static const NSInteger minNumberOfColumns = 2;
-static const NSInteger maxNumberOfColumns = 3;
-static const NSInteger maxNumberOfInspectors = 1;
+[[maybe_unused]] static const NSInteger minNumberOfColumns = 2;
+[[maybe_unused]] static const NSInteger maxNumberOfColumns = 3;
+[[maybe_unused]] static const NSInteger maxNumberOfInspectors = 1;
 
-@interface RNSSplitHostController () <UISplitViewControllerDelegate,
-                                      RNSSplitNavigationControllerFrameOriginChangeDelegate>
+@interface RNSSplitHostController () <UISplitViewControllerDelegate, RNSSplitColumnControllerDelegate>
 @end
 
 @implementation RNSSplitHostController {
-  BOOL _needsChildViewControllersUpdate;
-
   RNSSplitAppearanceCoordinator *_splitAppearanceCoordinator;
   RNSSplitAppearanceApplicator *_splitAppearanceApplicator;
-
-  RNSSplitHostComponentView *_splitHostComponentView;
 
   /**
    * This variable is keeping the value of how many columns were set in the initial render. It's used for validation,
@@ -41,36 +35,36 @@ static const NSInteger maxNumberOfInspectors = 1;
    * avoiding crashes when certain columns are collapsed or hidden.
    */
   NSMutableSet<NSNumber *> *_visibleColumns;
+
+  /** Controllers of the columns, in column order, alive for the host's lifetime. */
+  NSMutableArray<RNSSplitColumnController *> *_columnControllers;
+  RNSSplitColumnController *_inspectorColumnController;
+  BOOL _columnsInstalled;
+  BOOL _inspectorInstalled;
 }
 
-- (instancetype)initWithSplitHostComponentView:(RNSSplitHostComponentView *)splitHostComponentView
-                               numberOfColumns:(NSInteger)numberOfColumns
+- (instancetype)initWithNumberOfColumns:(NSInteger)numberOfColumns
 {
   if (self = [super initWithStyle:[RNSSplitHostController styleByNumberOfColumns:numberOfColumns]]) {
-    _splitHostComponentView = splitHostComponentView;
     _splitAppearanceCoordinator = [RNSSplitAppearanceCoordinator new];
     _splitAppearanceApplicator = [RNSSplitAppearanceApplicator new];
     _fixedColumnsCount = numberOfColumns;
-    _needsChildViewControllersUpdate = NO;
     _visibleColumns = [NSMutableSet set];
+    _columnControllers = [NSMutableArray arrayWithCapacity:numberOfColumns];
+    for (NSInteger index = 0; index < numberOfColumns; index++) {
+      RNSSplitColumnController *columnController = [RNSSplitColumnController new];
+      columnController.delegate = self;
+      [_columnControllers addObject:columnController];
+    }
 
     self.delegate = self;
+    [self installColumnsIfNeeded];
   }
 
   return self;
 }
 
-- (RNSSplitHostComponentEventEmitter *)reactEventEmitter
-{
-  return [_splitHostComponentView reactEventEmitter];
-}
-
 #pragma mark - Signals
-
-- (void)setNeedsUpdateOfChildViewControllers
-{
-  _needsChildViewControllersUpdate = YES;
-}
 
 - (void)setNeedsAppearanceUpdate
 {
@@ -102,49 +96,78 @@ static const NSInteger maxNumberOfInspectors = 1;
 
 #pragma mark - Updating
 
-- (void)updateChildViewControllersIfNeeded
+- (RNSSplitColumnController *)columnControllerForColumn:(NSInteger)column
 {
-  if (_needsChildViewControllersUpdate) {
-    [self updateChildViewControllers];
+  if (column < 0) {
+    if (_inspectorColumnController == nil) {
+      _inspectorColumnController = [RNSSplitColumnController new];
+      _inspectorColumnController.delegate = self;
+    }
+    return _inspectorColumnController;
   }
+  RCTAssert(column < (NSInteger)_columnControllers.count,
+            @"[RNScreens] Screen mounted in column %ld of a Split with %lu columns",
+            (long)column,
+            (unsigned long)_columnControllers.count);
+  return _columnControllers[column];
 }
 
-- (void)updateChildViewControllers
+- (void)insertScreen:(UIView<RNSStackScreenProviding> *)screen inColumn:(NSInteger)column atIndex:(NSInteger)index
 {
-  RCTAssert(_needsChildViewControllersUpdate,
-            @"[RNScreens] Child view controller must be invalidated when update is forced!");
+  [[self columnControllerForColumn:column] insertScreen:screen atIndex:index];
+}
 
-  NSArray<RNSSplitScreenComponentView *> *currentColumns = [self filterSubviewsOfType:RNSSplitScreenColumnTypeColumn
-                                                                                   in:self.splitReactSubviews];
-  NSArray<RNSSplitScreenComponentView *> *currentInspectors =
-      [self filterSubviewsOfType:RNSSplitScreenColumnTypeInspector in:self.splitReactSubviews];
+- (void)removeScreen:(UIView<RNSStackScreenProviding> *)screen inColumn:(NSInteger)column
+{
+  [[self columnControllerForColumn:column] removeScreen:screen];
+}
 
-  [self validateColumns:currentColumns];
-  [self validateInspectors:currentInspectors];
-
-  NSMutableArray<RNSSplitNavigationController *> *currentViewControllers =
-      [NSMutableArray arrayWithCapacity:currentColumns.count];
-  for (RNSSplitScreenComponentView *column in currentColumns) {
-    [currentViewControllers addObject:[[RNSSplitNavigationController alloc] initWithRootViewController:column.controller
-                                                                             frameOriginChangeDelegate:self]];
-  }
-
-  self.viewControllers = currentViewControllers;
-
-#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-  if (@available(iOS 26.0, *)) {
-    [self maybeSetupInspector:currentInspectors];
-  }
-#endif
-
-  _needsChildViewControllersUpdate = NO;
+- (void)screenDidChangeActivityMode:(UIView<RNSStackScreenProviding> *)screen inColumn:(NSInteger)column
+{
+  [[self columnControllerForColumn:column] screenDidChangeActivityMode:screen];
 }
 
 - (void)updateSplitAppearanceIfNeeded
 {
-  [_splitAppearanceApplicator updateAppearanceIfNeeded:_splitHostComponentView
+  [_splitAppearanceApplicator updateAppearanceIfNeeded:self.appearanceProvider
                                    splitHostController:self
                                  appearanceCoordinator:_splitAppearanceCoordinator];
+}
+
+- (void)flushPendingColumnUpdates
+{
+  for (RNSSplitColumnController *columnController in _columnControllers) {
+    [columnController flushPendingUpdates];
+  }
+  [_inspectorColumnController flushPendingUpdates];
+  [self installColumnsIfNeeded];
+}
+
+/**
+ * @brief Installs the column navigation controllers once, including columns with no attached screens.
+ * The controllers live for the host's lifetime and only their stacks change.
+ */
+- (void)installColumnsIfNeeded
+{
+  if (!_columnsInstalled) {
+    for (NSInteger index = 0; index < (NSInteger)_columnControllers.count; index++) {
+      UISplitViewControllerColumn column = index == (NSInteger)_columnControllers.count - 1
+          ? UISplitViewControllerColumnSecondary
+          : (index == 0 ? UISplitViewControllerColumnPrimary : UISplitViewControllerColumnSupplementary);
+      [self setViewController:_columnControllers[index].navigationController forColumn:column];
+    }
+    _columnsInstalled = YES;
+  }
+
+#if !TARGET_OS_TV && RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
+  if (@available(iOS 26.0, *)) {
+    if (!_inspectorInstalled && _inspectorColumnController != nil) {
+      [self setViewController:_inspectorColumnController.navigationController
+                    forColumn:UISplitViewControllerColumnInspector];
+      _inspectorInstalled = YES;
+    }
+  }
+#endif
 }
 
 - (void)refreshSecondaryNavBar
@@ -182,29 +205,6 @@ static const NSInteger maxNumberOfInspectors = 1;
     default:
       return UISplitViewControllerStyleUnspecified;
   }
-}
-
-/**
- * @brief Filters the given subviews array by a specific column type.
- *
- * Iterates over the provided subviews array and returns only the elements that match
- * the specified RNSSplitScreenColumnType (e.g., .column, .inspector).
- *
- * @param type The target RNSSplitScreenColumnType to filter for.
- * @param subviews The array of RNSSplitScreenComponentView elements to filter.
- * @return A filtered array of RNSSplitScreenComponentView objects with the specified column type.
- */
-- (NSArray<RNSSplitScreenComponentView *> *)filterSubviewsOfType:(RNSSplitScreenColumnType)type
-                                                              in:(NSArray<RNSSplitScreenComponentView *> *)subviews
-{
-  NSMutableArray<RNSSplitScreenComponentView *> *filteredSubviews = [NSMutableArray array];
-  for (RNSSplitScreenComponentView *subview in subviews) {
-    if (subview.columnType == type) {
-      [filteredSubviews addObject:subview];
-    }
-  }
-
-  return filteredSubviews;
 }
 
 #pragma mark - Public setters
@@ -269,57 +269,23 @@ static const NSInteger maxNumberOfInspectors = 1;
  */
 - (void)reactMountingTransactionDidMount
 {
-  [self updateChildViewControllersIfNeeded];
+  [self flushPendingColumnUpdates];
+  RCTAssert(_columnsInstalled, @"[RNScreens] Split column controllers must be installed");
   [self updateSplitAppearanceIfNeeded];
-  [self validateSplitViewHierarchy];
 }
 
 #pragma mark - RNSOrientationProviding
 
 - (RNSOrientation)evaluateOrientation
 {
-  return _splitHostComponentView.orientation;
-}
-
-#pragma mark - Validators
-
-/** @brief Validates that child structure meets required constraints defined for columns and the inspector. */
-- (void)validateSplitViewHierarchy
-{
-  NSArray<RNSSplitScreenComponentView *> *columns = [self filterSubviewsOfType:RNSSplitScreenColumnTypeColumn
-                                                                            in:self.splitReactSubviews];
-  NSArray<RNSSplitScreenComponentView *> *inspectors = [self filterSubviewsOfType:RNSSplitScreenColumnTypeInspector
-                                                                               in:self.splitReactSubviews];
-
-  [self validateColumns:columns];
-  [self validateInspectors:inspectors];
-}
-
-/** @brief Ensures that number of columns is valid and hasn't changed dynamically. */
-- (void)validateColumns:(NSArray<RNSSplitScreenComponentView *> *)columns
-{
-  RCTAssert((NSInteger)columns.count >= minNumberOfColumns && (NSInteger)columns.count <= maxNumberOfColumns,
-            @"[RNScreens] Split can only have from %ld to %ld columns",
-            (long)minNumberOfColumns,
-            (long)maxNumberOfColumns);
-
-  RCTAssert((NSInteger)columns.count == _fixedColumnsCount,
-            @"[RNScreens] Split number of columns shouldn't change dynamically");
-}
-
-/** @brief Ensures that at most one inspector is present. */
-- (void)validateInspectors:(NSArray<RNSSplitScreenComponentView *> *)inspectors
-{
-  RCTAssert((NSInteger)inspectors.count <= maxNumberOfInspectors,
-            @"[RNScreens] Split can only have %ld inspector",
-            (long)maxNumberOfInspectors);
+  return self.appearanceProvider.orientation;
 }
 
 /**
  * @brief Gets the children RNSSplitScreenController instances.
  *
  * Accesses Split controllers associated with presented columns. It asserts that each view controller is a navigation
- * controller and its topViewController is of type RNSSplitScreenController.
+ * controller. Empty columns have no screen to notify; other top controllers must be RNSSplitScreenController.
  *
  * @return An array of RNSSplitScreenController corresponding to current split view columns.
  */
@@ -333,20 +299,22 @@ static const NSInteger maxNumberOfInspectors = 1;
     UIViewController *viewController = [self viewControllerForColumn:column];
     RCTAssert(viewController != nil, @"[RNScreens] viewController for column %ld is nil.", (long)column);
 
-    RNSSplitNavigationController *splitNavigationController =
-        [viewController isKindOfClass:RNSSplitNavigationController.class]
-        ? (RNSSplitNavigationController *)viewController
-        : nil;
-    RCTAssert(splitNavigationController != nil,
-              @"[RNScreens] Expected RNSSplitNavigationController but got %@",
+    UINavigationController *navigationController =
+        [viewController isKindOfClass:UINavigationController.class] ? (UINavigationController *)viewController : nil;
+    RCTAssert(navigationController != nil,
+              @"[RNScreens] Expected UINavigationController but got %@",
               NSStringFromClass(viewController.class));
 
-    UIViewController *maybeSplitScreenController = splitNavigationController.topViewController;
+    UIViewController *maybeSplitScreenController = navigationController.topViewController;
+    if (maybeSplitScreenController == nil ||
+        ([navigationController isKindOfClass:RNSStackNavigationController.class] &&
+         [(RNSStackNavigationController *)navigationController isStackEmpty])) {
+      continue;
+    }
     RCTAssert(
-        maybeSplitScreenController != nil, @"[RNScreens] RNSSplitScreenController is nil for column %ld", (long)column);
-    RCTAssert([maybeSplitScreenController isKindOfClass:RNSSplitScreenController.class],
-              @"[RNScreens] Expected RNSSplitScreenController but got %@",
-              NSStringFromClass(maybeSplitScreenController.class));
+        [maybeSplitScreenController isKindOfClass:RNSSplitScreenController.class],
+        @"[RNScreens] Expected RNSSplitScreenController but got %@",
+        NSStringFromClass(maybeSplitScreenController.class));
 
     if ([maybeSplitScreenController isKindOfClass:RNSSplitScreenController.class]) {
       [splitScreenControllers addObject:(RNSSplitScreenController *)maybeSplitScreenController];
@@ -356,43 +324,14 @@ static const NSInteger maxNumberOfInspectors = 1;
   return splitScreenControllers;
 }
 
-/**
- * @brief Gets all React subviews of type RNSSplitScreenComponentView.
- *
- * Accesses all the subviews from the reactSubviews collection. It asserts that each one is a
- * RNSSplitScreenComponentView.
- *
- * @return An array of RNSSplitScreenComponentView subviews which are children of the host component view.
- */
-- (NSArray<RNSSplitScreenComponentView *> *)splitReactSubviews
-{
-  NSArray<RNSSplitScreenComponentView *> *reactSubviews = [_splitHostComponentView reactSubviews];
-  NSMutableArray<RNSSplitScreenComponentView *> *splitReactSubviews =
-      [NSMutableArray arrayWithCapacity:reactSubviews.count];
-
-  for (RNSSplitScreenComponentView *subview in reactSubviews) {
-    RCTAssert([subview isKindOfClass:RNSSplitScreenComponentView.class],
-              @"[RNScreens] Expected RNSSplitScreenComponentView but got %@",
-              NSStringFromClass(subview.class));
-
-    if ([subview isKindOfClass:RNSSplitScreenComponentView.class]) {
-      [splitReactSubviews addObject:subview];
-    }
-  }
-
-  return splitReactSubviews;
-}
-
-#pragma mark - RNSSplitNavigationControllerFrameOriginChangeDelegate
+#pragma mark - RNSSplitColumnControllerDelegate
 
 /**
- * @brief Notifies that an origin of parent RNSSplitNavigationController frame has changed.
+ * @brief Notifies that the origin of a column's navigation controller view has changed.
  *
  * It iterates over children controllers and notifies them for the layout update.
- *
- * @param splitNavCtrl The navigation controller whose frame origin changed.
  */
-- (void)splitNavigationControllerFrameOriginDidChange:(RNSSplitNavigationController *)splitNavCtrl
+- (void)splitColumnControllerFrameOriginDidChange:(RNSSplitColumnController *)columnController
 {
   for (RNSSplitScreenController *controller in self.splitScreenControllers) {
     [controller columnPositioningDidChangeInSplitViewController:self];
@@ -400,28 +339,6 @@ static const NSInteger maxNumberOfInspectors = 1;
 }
 
 #if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-
-/**
- * @brief Sets up the inspector column if available.
- * @remarks Inspector columns is available only on iOS 26 or higher.
- *
- * Attaches a view controller for the inspector column.
- *
- * @param inspectors An array of inspector-type RNSSplitScreenComponentView subviews.
- */
-- (void)maybeSetupInspector:(NSArray<RNSSplitScreenComponentView *> *)inspectors
-{
-#if !TARGET_OS_TV
-  if (@available(iOS 26.0, *)) {
-    RNSSplitScreenComponentView *inspector = inspectors.firstObject;
-    if (inspector != nil) {
-      RNSSplitNavigationController *inspectorViewController =
-          [[RNSSplitNavigationController alloc] initWithRootViewController:inspector.controller];
-      [self setViewController:inspectorViewController forColumn:UISplitViewControllerColumnInspector];
-    }
-  }
-#endif
-}
 
 /**
  * @brief Shows the inspector column when available.
@@ -469,12 +386,12 @@ static const NSInteger maxNumberOfInspectors = 1;
 
 - (void)splitViewControllerDidCollapse:(UISplitViewController *)svc
 {
-  [[self reactEventEmitter] emitOnCollapse];
+  [self.eventsDelegate splitHostControllerDidCollapse:self];
 }
 
 - (void)splitViewControllerDidExpand:(UISplitViewController *)svc
 {
-  [[self reactEventEmitter] emitOnExpand];
+  [self.eventsDelegate splitHostControllerDidExpand:self];
 }
 
 #if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
@@ -508,7 +425,7 @@ static const NSInteger maxNumberOfInspectors = 1;
     UIViewController *inspectorViewController = [self viewControllerForColumn:UISplitViewControllerColumnInspector];
     if (inspectorViewController != nil) {
       if (inspectorViewController.view.window == nil) {
-        [[self reactEventEmitter] emitOnHideInspector];
+        [self.eventsDelegate splitHostControllerDidHideInspector:self];
       }
     }
   }
@@ -521,7 +438,7 @@ static const NSInteger maxNumberOfInspectors = 1;
     willChangeToDisplayMode:(UISplitViewControllerDisplayMode)displayMode
 {
   if (self.displayMode != displayMode) {
-    [[self reactEventEmitter] emitOnDisplayModeWillChangeFrom:self.displayMode to:displayMode];
+    [self.eventsDelegate splitHostController:self willChangeDisplayModeFrom:self.displayMode to:displayMode];
   }
 
   __weak auto weakSelf = self;
@@ -550,8 +467,8 @@ static const NSInteger maxNumberOfInspectors = 1;
 - (UISplitViewControllerColumn)splitViewController:(UISplitViewController *)svc
          topColumnForCollapsingToProposedTopColumn:(UISplitViewControllerColumn)proposedTopColumn
 {
-  if (_splitHostComponentView.hasCustomTopColumnForCollapsing) {
-    return _splitHostComponentView.topColumnForCollapsingColumn;
+  if (self.behaviorProvider.hasCustomTopColumnForCollapsing) {
+    return self.behaviorProvider.topColumnForCollapsingColumn;
   }
 
   return proposedTopColumn;

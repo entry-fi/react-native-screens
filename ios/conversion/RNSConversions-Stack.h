@@ -2,11 +2,14 @@
 
 #if defined(__cplusplus) && RNS_GAMMA_ENABLED
 
+#import <UIKit/UIKit.h>
 #import <react/renderer/components/rnscreens/Props.h>
 #import "RNSHeaderItemPlacement.h"
 #import "RNSHeaderItemSpacerPlacement.h"
-#import "RNSStackScreenComponentView.h"
+#import "RNSStackScreenProviding.h"
 #import "always_false.h"
+
+namespace react = facebook::react;
 
 namespace rnscreens::conversion {
 
@@ -21,11 +24,15 @@ template <>
 RNSStackScreenActivityMode convert(react::RNSStackScreenActivityMode mode);
 
 template <>
-RNSHeaderItemPlacement convert(react::RNSStackHeaderItemIOSPlacement placement);
+RNSHeaderItemPlacement convert(react::RNSHeaderItemIOSPlacement placement);
 
 template <>
 RNSHeaderItemSpacerPlacement convert(
-    react::RNSStackHeaderItemSpacerIOSPlacement placement);
+    react::RNSHeaderItemSpacerIOSPlacement placement);
+
+template <>
+UINavigationItemBackButtonDisplayMode convert(
+    react::RNSHeaderConfigIOSBackButtonDisplayMode displayMode);
 
 }; // namespace rnscreens::conversion
 

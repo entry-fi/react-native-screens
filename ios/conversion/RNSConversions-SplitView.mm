@@ -193,4 +193,20 @@ RNSSplitScreenColumnType RNSSplitScreenColumnTypeFromScreenProp(facebook::react:
   }
 }
 
+#if RNS_GAMMA_ENABLED
+RNSStackScreenActivityMode RNSStackScreenActivityModeFromSplitScreenProp(
+    facebook::react::RNSSplitScreenActivityMode activityMode)
+{
+  using enum facebook::react::RNSSplitScreenActivityMode;
+
+  switch (activityMode) {
+    case Detached:
+      return RNSStackScreenActivityModeDetached;
+    case Attached:
+    default:
+      return RNSStackScreenActivityModeAttached;
+  }
+}
+#endif // RNS_GAMMA_ENABLED
+
 }; // namespace rnscreens::conversion

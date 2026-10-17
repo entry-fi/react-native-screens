@@ -38,3 +38,6 @@ export type InterfaceOrientation =
 export type ScrollEdgeEffect = 'automatic' | 'hard' | 'soft' | 'hidden';
 
 export type UserInterfaceStyle = 'unspecified' | 'light' | 'dark';
+
+// Entry fork: the Stack v5 iOS header (taken from main) imports PlatformIconIOS from here; 4.30.0 keeps it in src/types.
+export type { PlatformIconIOS } from '../../types';

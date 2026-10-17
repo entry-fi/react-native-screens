@@ -17,7 +17,7 @@ module.exports = {
           'RNSTabsHostComponentDescriptor',
           'RNSSafeAreaViewComponentDescriptor',
           'RNSStackScreenComponentDescriptor',
-          'RNSStackHeaderConfigComponentDescriptor',
+          'RNSHeaderConfigComponentDescriptor',
           'RNSStackHeaderSubviewComponentDescriptor',
           'RNSFormSheetHostComponentDescriptor'
         ],

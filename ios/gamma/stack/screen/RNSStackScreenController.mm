@@ -1,12 +1,12 @@
 #import "RNSStackScreenController.h"
 #import "RNSContainer.h"
 #import "RNSContainerItemSupport.h"
+#import "RNSHeaderCoordinator.h"
 #import "RNSLog.h"
 #import "RNSStackHostComponentView.h"
 #import "RNSStackNavigationController.h"
 #import "RNSStackScreenComponentEventEmitter.h"
 #import "RNSStackScreenComponentView.h"
-#import "RNSStackScreenHeaderCoordinator.h"
 
 @implementation RNSStackScreenController {
   RNSStackScreenComponentView *_Nonnull _screenView;
@@ -17,7 +17,7 @@
 {
   if (self = [super initWithNibName:nil bundle:nil]) {
     _screenView = componentView;
-    _headerCoordinator = [[RNSStackScreenHeaderCoordinator alloc] initWithScreenController:self];
+    _headerCoordinator = [[RNSHeaderCoordinator alloc] initWithScreenController:self];
     _containerItemSupport = [RNSContainerItemSupport new];
   }
   return self;
@@ -56,6 +56,10 @@
 - (void)viewWillAppear:(BOOL)animated
 {
   [super viewWillAppear:animated];
+  [self.headerCoordinator updateNavigationBarVisibilityAnimated:animated];
+#if !TARGET_OS_TV
+  [self.headerCoordinator updateBackButtonMenuEnabled];
+#endif // !TARGET_OS_TV
   [[self reactEventEmitter] emitOnWillAppear];
 }
 
@@ -83,6 +87,14 @@
   [super didMoveToParentViewController:parent];
 
   if (parent == nil) {
+#if !TARGET_OS_TV
+    // The pop transition has completed. Clear the back button config this
+    // screen has applied onto the screen below. UIKit seems to serialize
+    // navigation transitions (undocumented, internal, but seems to work on 18 and 26),
+    // so this runs before a queued push applies its own config.
+    [_headerCoordinator clearAppliedBackButtonConfig];
+#endif // !TARGET_OS_TV
+
     if (_screenView.activityMode == RNSStackScreenActivityModeDetached) {
       [[self reactEventEmitter] emitOnDismiss];
     } else {

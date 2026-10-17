@@ -21,13 +21,13 @@
 @implementation RNSFormSheetContentWrapperComponentView
 @end
 
-@implementation RNSStackHeaderConfigComponentView
+@implementation RNSHeaderConfigComponentView
 @end
 
-@implementation RNSStackHeaderItemComponentView
+@implementation RNSHeaderItemComponentView
 @end
 
-@implementation RNSStackHeaderItemSpacerComponentView
+@implementation RNSHeaderItemSpacerComponentView
 @end
 
 @implementation RNSScrollToTopGuard

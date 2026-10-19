@@ -718,6 +718,17 @@ RNS_IGNORE_SUPER_CALL_END
   // This assignment should be done after `navitem.titleView = ...` assignment (iOS 16.0 bug).
   // See: https://github.com/software-mansion/react-native-screens/issues/1570 (comments)
   navitem.title = config.title;
+  // [entry.fi patch, part 4] The iOS 26 subtitle, the classic-stack half of upstream #3200 (open; the
+  // gamma stack already maps it). With no title view UIKit lays title and subtitle out itself: centred
+  // on iPhone, leading where the system leads titles (the iPhone Duo's outer display) — a title view
+  // is always centred. No text attributes: the system subtitle style, resolved against the bar's
+  // `overrideUserInterfaceStyle`. nil (an empty prop) clears it. Drop when upstream's classic stack
+  // takes `subtitle`.
+#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
+  if (@available(iOS 26.0, *)) {
+    navitem.subtitle = config.subtitle;
+  }
+#endif // RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
   navitem.leftBarButtonItems = [config barButtonItemsFromConfigs:config.headerLeftBarButtonItems
                                                 withCurrentItems:navitem.leftBarButtonItems];
   navitem.rightBarButtonItems = [config barButtonItemsFromConfigs:config.headerRightBarButtonItems
@@ -1100,6 +1111,7 @@ static RCTResizeMode resizeModeFromCppEquiv(react::ImageResizeMode resizeMode)
   }
 
   _title = RCTNSStringFromStringNilIfEmpty(newScreenProps.title);
+  _subtitle = RCTNSStringFromStringNilIfEmpty(newScreenProps.subtitle);
   if (newScreenProps.titleFontFamily != oldScreenProps.titleFontFamily) {
     _titleFontFamily = RCTNSStringFromStringNilIfEmpty(newScreenProps.titleFontFamily);
   }

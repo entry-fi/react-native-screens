@@ -66,6 +66,8 @@ export interface NativeProps extends ViewProps {
   largeTitleColor?: ColorValue | undefined;
   translucent?: boolean | undefined;
   title?: string | undefined;
+  // [entry.fi patch, part 4] iOS 26+ `UINavigationItem.subtitle`.
+  subtitle?: string | undefined;
   titleFontFamily?: string | undefined;
   titleFontSize?: CT.Int32 | undefined;
   titleFontWeight?: string | undefined;

@@ -231,6 +231,12 @@ class ScreenStackHeaderConfigViewManager :
 
     // iOS only
 
+    // [entry.fi patch, part 4] iOS 26+ `UINavigationItem.subtitle`; Android draws its own title.
+    override fun setSubtitle(
+        view: ScreenStackHeaderConfig?,
+        value: String?,
+    ) = Unit
+
     override fun setBackTitle(
         view: ScreenStackHeaderConfig?,
         value: String?,

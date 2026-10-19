@@ -832,6 +832,13 @@ export interface ScreenStackHeaderConfigProps extends ViewProps {
    */
   title?: string | undefined;
   /**
+   * [entry.fi patch, part 4] A second line under the title, drawn by UIKit
+   * (`UINavigationItem.subtitle`). Empty or undefined clears it.
+   *
+   * @platform ios 26+
+   */
+  subtitle?: string | undefined;
+  /**
    * Allows for setting text color of the title.
    */
   titleColor?: ColorValue | undefined;

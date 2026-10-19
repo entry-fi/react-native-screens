@@ -24,6 +24,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, retain) NSString *title;
+// [entry.fi patch, part 4] `UINavigationItem.subtitle` on iOS 26+; nil clears it.
+@property (nonatomic, retain, nullable) NSString *subtitle;
 @property (nonatomic, retain) NSString *titleFontFamily;
 @property (nonatomic, retain) NSNumber *titleFontSize;
 @property (nonatomic, retain) NSString *titleFontWeight;

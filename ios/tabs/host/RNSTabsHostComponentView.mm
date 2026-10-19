@@ -129,6 +129,11 @@ namespace react = facebook::react;
 - (void)didMoveToWindow
 {
   if (self.window != nil && _controller.parentViewController == nil) {
+    // [entry.fi patch, part 5] Size the controller's view to the host before it joins the hierarchy. The view
+    // was loaded detached, at the main screen's size, and set up there; added and pinned with that frame, the
+    // resize to the host changes no size class and UIKit never builds the side rail's tab bar (iPhone Duo,
+    // iOS 27.1, launched unfolded: the view came in at the 466x678 cover display inside a 951x669 host).
+    _controller.view.frame = self.bounds;
     BOOL mountResult = [RNSContainerHelpers addChildViewController:_controller
                                           toViewControllerManaging:self.reactSuperview
                                                  withContainerView:self];

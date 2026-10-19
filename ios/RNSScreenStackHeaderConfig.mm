@@ -403,7 +403,25 @@ RNS_IGNORE_SUPER_CALL_END
 {
   UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
 
-  if (config.backgroundColor && CGColorGetAlpha(config.backgroundColor.CGColor) == 0.) {
+  // [entry.fi patch, part 1] On iOS 26+ a translucent bar with no background colour (or a fully
+  // transparent one) and no blur effect gets the system default appearance instead of the
+  // transparent one. That tuple is exactly what expo-router sends for `headerTransparent: true`
+  // with no header background: its `backgroundColor` falls back to 'transparent' (alpha 0),
+  // never to nil, which is why upstream's pending #4849 (`backgroundColor == nil` only) would
+  // not reach these bars. Drop once upstream picks configureWithDefaultBackground for an alpha-0
+  // colour too, or expo-router stops sending 'transparent' and #4849 lands; or earlier, if a
+  // build without this part shows the same bars (see docs/dependency-resolutions.md).
+  BOOL useSystemDefault = NO;
+#if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
+  if (@available(iOS 26.0, *)) {
+    useSystemDefault = config.translucent && config.blurEffect == RNSBlurEffectStyleNone &&
+        (config.backgroundColor == nil || CGColorGetAlpha(config.backgroundColor.CGColor) == 0.);
+  }
+#endif // RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
+
+  if (useSystemDefault) {
+    [appearance configureWithDefaultBackground];
+  } else if (config.backgroundColor && CGColorGetAlpha(config.backgroundColor.CGColor) == 0.) {
     // Preserve the shadow properties in case the user wants to show the shadow on scroll.
     UIColor *shadowColor = appearance.shadowColor;
     UIImage *shadowImage = appearance.shadowImage;
@@ -419,13 +437,17 @@ RNS_IGNORE_SUPER_CALL_END
   }
 
   // set background color if specified
-  if (config.backgroundColor) {
+  // [entry.fi patch, part 1] not for the system default appearance: the colour and the nil effect would replace
+  // its material.
+  if (config.backgroundColor && !useSystemDefault) {
     appearance.backgroundColor = config.backgroundColor;
   }
 
   switch (config.blurEffect) {
     case RNSBlurEffectStyleNone:
-      appearance.backgroundEffect = nil;
+      if (!useSystemDefault) {
+        appearance.backgroundEffect = nil;
+      }
       break;
 
     case RNSBlurEffectStyleSystemDefault:

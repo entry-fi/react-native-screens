@@ -1,6 +1,6 @@
 {
-  "name": "react-native-screens",
-  "version": "4.30.0",
+  "name": "@entry-fi/react-native-screens",
+  "version": "4.30.0-entry.1",
   "description": "Native navigation primitives for your React Native app.",
   "scripts": {
     "submodules": "git submodule update --init --recursive && (cd react-navigation && yarn && yarn build && cd ../)",
@@ -56,7 +56,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/software-mansion/react-native-screens.git"
+    "url": "git+https://github.com/entry-fi/react-native-screens.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "author": {
     "email": "krzys.magiera@gmail.com",

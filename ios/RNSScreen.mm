@@ -32,6 +32,11 @@
 #import "RNSDefines.h"
 #import "UIView+RNSUtility.h"
 
+#if RNS_GAMMA_ENABLED
+#import "RNSScrollViewMarkerComponentView.h"
+#import "RNSScrollViewSeeking.h"
+#endif // RNS_GAMMA_ENABLED
+
 namespace react = facebook::react;
 
 constexpr NSInteger SHEET_FIT_TO_CONTENTS = -1;
@@ -51,6 +56,18 @@ struct ContentWrapperBox {
                              CAAnimationDelegate>
 @end
 
+#if RNS_GAMMA_ENABLED
+// [entry.fi patch, part 2] The classic stack screen (the one expo-router's Stack renders) becomes a
+// `ScrollViewMarker` target, like the native tab screen (ios/tabs/screen/RNSTabsScreenComponentView.mm)
+// and the gamma stack screen (ios/gamma/stack/screen/RNSStackScreenComponentView.mm) already are, so
+// its controller tracks the marked scroll view (`-setContentScrollView:forEdge:`); upstream never
+// sets it for RNSScreen. It is not what draws the bar's blur (the marker's `soft` top edge is), and
+// whether it is still needed is open: drop it if a build without it shows no difference, or when
+// upstream's classic stack screen adopts RNSScrollViewSeeking / calls setContentScrollView.
+@interface RNSScreenView () <RNSScrollViewSeeking>
+@end
+#endif // RNS_GAMMA_ENABLED
+
 @implementation RNSScreenView {
   __weak RCTScrollViewComponentView *_sheetsScrollView;
   /// Tag of `_sheetsScrollView` at the time we started observing it. Fabric changes the tag when it recycles
@@ -66,6 +83,12 @@ struct ContentWrapperBox {
   RCTSurfaceTouchHandler *_touchHandler;
   react::RNSScreenShadowNode::ConcreteState::Shared _state;
   NSMutableArray<UIView *> *_reactSubviews;
+#if RNS_GAMMA_ENABLED
+  // [entry.fi patch] The marker whose scroll view the controller tracks, and the seeking ancestor
+  // (a native tab screen) the registration was forwarded to.
+  __weak RNSScrollViewMarkerComponentView *_contentScrollViewMarker;
+  __weak id<RNSScrollViewSeeking> _forwardedSeekingAncestor;
+#endif // RNS_GAMMA_ENABLED
 }
 
 - (instancetype)initWithFrame:(CGRect)frame
@@ -1156,6 +1179,66 @@ RNS_IGNORE_SUPER_CALL_END
   [RNSScrollEdgeEffectApplicator applyToScrollView:[RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:self]
                                       withProvider:self];
 }
+
+#if RNS_GAMMA_ENABLED
+#pragma mark - RNSScrollViewSeeking ([entry.fi patch], see the class extension above)
+
+// The next seeking ancestor above this screen, found the way the marker finds its own
+// (RNSScrollViewMarkerComponentView -findFirstSeekingAncestor). For a tab root that is the native
+// tab screen. Outer stack screens (a modal hosting its own stack) are skipped: they keep exactly
+// the scroll-view tracking they had before this patch.
+- (nullable id<RNSScrollViewSeeking>)findSeekingAncestorAboveSelf
+{
+  UIView *view = self.reactSuperview;
+  if (view == nil) {
+    view = self.superview;
+  }
+  while (view != nil) {
+    if (![view isKindOfClass:RNSScreenView.class] &&
+        [view respondsToSelector:@selector(registerDescendantScrollView:fromMarker:)]) {
+      return static_cast<id<RNSScrollViewSeeking>>(view);
+    }
+    view = [view respondsToSelector:@selector(reactSuperview)] ? [view reactSuperview] : view.superview;
+  }
+  return nil;
+}
+
+// Called from the marker's -willMoveToWindow: when it enters the window, so a scroll view that
+// mounts after the push (under a Suspense boundary) registers then. The marker owns the scroll
+// view's edge effects (its `scrollEdgeEffects` prop); nothing is applied here. The registration is
+// forwarded so a tab root's native tab screen still gets the scroll view: the marker stops at the
+// first seeking ancestor, which is now this screen, and the tab bar's edge effect and its re-tap
+// scroll-to-top read the tab screen's copy.
+- (void)registerDescendantScrollView:(UIScrollView *)scrollView fromMarker:(RNSScrollViewMarkerComponentView *)marker
+{
+  if (@available(iOS 15.0, tvOS 15.0, *)) {
+    [_controller setContentScrollView:scrollView forEdge:NSDirectionalRectEdgeAll];
+  }
+  _contentScrollViewMarker = marker;
+
+  id<RNSScrollViewSeeking> ancestor = [self findSeekingAncestorAboveSelf];
+  _forwardedSeekingAncestor = ancestor;
+  [ancestor registerDescendantScrollView:scrollView fromMarker:marker];
+}
+
+// Called when the marker leaves the window (pop, a push over this screen, unmount). Hands UIKit nil
+// so no stale scroll view is tracked; a stale marker leaving after a newer one registered must not
+// clear the newer one (same rule as RNSContainerItemSupport -unregisterNestedContainer:).
+- (void)unregisterDescendantScrollViewFromMarker:(RNSScrollViewMarkerComponentView *)marker
+{
+  if (_contentScrollViewMarker == marker) {
+    _contentScrollViewMarker = nil;
+    if (@available(iOS 15.0, tvOS 15.0, *)) {
+      [_controller setContentScrollView:nil forEdge:NSDirectionalRectEdgeAll];
+    }
+  }
+
+  id<RNSScrollViewSeeking> ancestor = _forwardedSeekingAncestor;
+  if ([ancestor respondsToSelector:@selector(unregisterDescendantScrollViewFromMarker:)]) {
+    [ancestor unregisterDescendantScrollViewFromMarker:marker];
+  }
+}
+#endif // RNS_GAMMA_ENABLED
 
 #pragma mark - RNSSafeAreaProviding
 

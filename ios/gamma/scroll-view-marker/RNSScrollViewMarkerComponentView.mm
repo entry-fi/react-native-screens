@@ -21,6 +21,9 @@ namespace react = facebook::react;
 @implementation RNSScrollViewMarkerComponentView {
   BOOL _hasAttemptedRegistration;
   BOOL _needsEdgeEffectUpdate;
+  // [entry.fi patch] The ancestor this marker registered with, so leaving the window can unregister
+  // from it without walking a hierarchy that may be half torn down.
+  __weak id<RNSScrollViewSeeking> _registeredAncestor;
 
   RNSScrollEdgeEffect _leftScrollEdgeEffect;
   RNSScrollEdgeEffect _topScrollEdgeEffect;
@@ -113,6 +116,19 @@ namespace react = facebook::react;
   }
 
   [seekingAncestor registerDescendantScrollView:scrollView fromMarker:self];
+  _registeredAncestor = seekingAncestor;
+}
+
+// [entry.fi patch] Lets a stack screen hand UIKit nil once its marked scroll view leaves (pop, push
+// over it, unmount). Never resolves the scroll view here: the child may already be gone, and
+// `findScrollView` asserts on that in debug.
+- (void)unregisterFromSeekingAncestor
+{
+  id<RNSScrollViewSeeking> ancestor = _registeredAncestor;
+  _registeredAncestor = nil;
+  if ([ancestor respondsToSelector:@selector(unregisterDescendantScrollViewFromMarker:)]) {
+    [ancestor unregisterDescendantScrollViewFromMarker:self];
+  }
 }
 
 - (void)configureScrollView:(nullable UIScrollView *)scrollView
@@ -152,6 +168,8 @@ namespace react = facebook::react;
   [super willMoveToWindow:newWindow];
   if (newWindow != nil) {
     [self maybeRegisterWithSeekingAncestor];
+  } else {
+    [self unregisterFromSeekingAncestor];
   }
 }
 

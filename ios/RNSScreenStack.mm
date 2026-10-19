@@ -231,10 +231,42 @@ namespace react = facebook::react;
   } else if (tabScreenController.tabScreenComponentView.shouldUseRepeatedTabSelectionScrollToTopSpecialEffect) {
     UIScrollView *scrollView =
         [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:[[self topViewController] view]];
+    if (scrollView != nil) {
+      [self restoreMinimizedNavigationBar];
+    }
     return [scrollView rnscreens_scrollToTop];
   }
 
   return false;
+}
+
+// [entry.fi patch, part 3] On iOS 27 a scrolled bar can be minimised, and the minimisation takes its height out of
+// the safe area, so `-adjustedContentInset.top` (the scroll-to-top target) is the minimised bar's. The bar comes back
+// at the top and lands over the first rows: the re-tap stopped short. UIKit's own scroll-to-top (the status-bar tap)
+// restores the bar before it scrolls (`-[UINavigationController _observeScrollViewWillScrollToTop:]`, private). The
+// public way to do the same: switch the top item's minimisation off and put its own configuration back. The bar
+// returns at once, the inset grows to the expanded bar's and UIKit keeps the content where it was; the layout pass
+// settles that before the scroll starts. Drop when upstream's re-tap restores the bar itself, or when no bar
+// minimises any more (part 2 removed).
+- (void)restoreMinimizedNavigationBar
+{
+#if RNS_IPHONE_OS_VERSION_AVAILABLE(27_0) && !TARGET_OS_TV && !TARGET_OS_VISION
+  if (@available(iOS 27.0, *)) {
+    if (self.navigationBarHidden) {
+      return;
+    }
+    UINavigationItem *navigationItem = self.topViewController.navigationItem;
+    UIBarMinimization *minimization = navigationItem.navigationBarMinimization;
+    if (minimization.minimizationBehavior == UIBarMinimizationBehaviorNever) {
+      return;
+    }
+    UIBarMinimization *expanded = [minimization copy];
+    expanded.minimizationBehavior = UIBarMinimizationBehaviorNever;
+    navigationItem.navigationBarMinimization = expanded;
+    navigationItem.navigationBarMinimization = minimization;
+    [self.view layoutIfNeeded];
+  }
+#endif // RNS_IPHONE_OS_VERSION_AVAILABLE(27_0) && !TARGET_OS_TV && !TARGET_OS_VISION
 }
 
 @end

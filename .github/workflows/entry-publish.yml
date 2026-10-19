@@ -1,0 +1,184 @@
+# Entry fork: builds lib/ and publishes @entry-fi/react-native-screens to
+# GitHub Packages (npm.pkg.github.com) with the run's own GITHUB_TOKEN.
+#
+# Every push to an `entry/**` branch that touches the package publishes a new
+# version; pushes that only touch CI, docs, Markdown, the example apps or
+# tests are skipped. `gh workflow run entry-publish.yml --ref <entry branch>`
+# publishes on demand (this file must also exist on `main` for that).
+#
+# The version is computed here, never committed: `<base>-entry.<N>`, where
+# <base> is package.json's version without any `-entry.*` suffix (the
+# upstream release the branch is built on) and <N> is one more than the
+# highest `<base>-entry.*` already in the registry. After publishing, the
+# built commit is tagged `v<version>`. Tags pushed with GITHUB_TOKEN do not
+# start workflows, so the tag does not publish again.
+name: Entry publish
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'entry/**'
+    paths-ignore:
+      - '.github/**'
+      - 'docs/**'
+      - 'guides/**'
+      - '**/*.md'
+      - 'apps/**'
+      - 'FabricExample/**'
+      - 'TVOSExample/**'
+      - '**/__tests__/**'
+      - '**/e2e/**'
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: entry-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # A dispatch from `main` would build upstream's package; only `entry/**`
+    # branches carry the fork's package metadata.
+    if: github.repository == 'entry-fi/react-native-screens' && startsWith(github.ref, 'refs/heads/entry/')
+    runs-on: ubuntu-latest
+    env:
+      # Same as upstream's publish-npm.yml.
+      YARN_ENABLE_HARDENED_MODE: 0
+      PACKAGE_NAME: '@entry-fi/react-native-screens'
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Node 24, like upstream's publish-npm.yml; writes an .npmrc that points
+      # the @entry-fi scope at GitHub Packages and reads NODE_AUTH_TOKEN.
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: yarn
+          registry-url: https://npm.pkg.github.com
+          scope: '@entry-fi'
+
+      - name: Check the package name
+        shell: bash
+        run: |
+          name=$(node -p "require('./package.json').name")
+          if [ "$name" != "$PACKAGE_NAME" ]; then
+            echo "::error::package.json name is ${name}, expected ${PACKAGE_NAME}"
+            exit 1
+          fi
+
+      # Yarn 4 (yarnPath) does not run the root `prepare` on install, so the
+      # build is its own step below.
+      - name: Install node dependencies
+        run: yarn install --immutable
+
+      # After the install, so the version change cannot touch the lockfile
+      # check. `npm view --json` prints a bare string when exactly one version
+      # exists, an array otherwise, and an error object for a package that
+      # has never been published (E404).
+      - name: Compute the version
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          current=$(node -p "require('./package.json').version")
+          base=${current%%-entry.*}
+          versions=$(npm view "$PACKAGE_NAME" versions --json --registry https://npm.pkg.github.com 2>/dev/null) || true
+          next=$(BASE="$base" VERSIONS="$versions" node -e '
+            const { BASE: base, VERSIONS: raw } = process.env;
+            let parsed;
+            try {
+              parsed = JSON.parse(raw || "null");
+            } catch {
+              console.error(`npm view printed unparseable output: ${raw}`);
+              process.exit(1);
+            }
+            let list;
+            if (Array.isArray(parsed)) list = parsed;
+            else if (typeof parsed === "string") list = [parsed];
+            else if (parsed && parsed.error && parsed.error.code === "E404") list = [];
+            else {
+              console.error(`npm view failed: ${raw}`);
+              process.exit(1);
+            }
+            const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const pattern = new RegExp(`^${escaped}-entry\\.(\\d+)$`);
+            const taken = list
+              .map((v) => pattern.exec(v))
+              .filter(Boolean)
+              .map((m) => Number(m[1]));
+            const n = taken.length > 0 ? Math.max(...taken) + 1 : 1;
+            console.log(`${base}-entry.${n}`);
+          ')
+          npm version "$next" --no-git-tag-version --allow-same-version --ignore-scripts
+          echo "Publishing ${PACKAGE_NAME}@${next} (package.json had ${current})"
+          echo "VERSION=${next}" >> "$GITHUB_ENV"
+          echo "PACKAGE_SPEC=${PACKAGE_NAME}@${next}" >> "$GITHUB_ENV"
+
+      - name: Check types
+        run: yarn check-types
+
+      - name: Build lib
+        run: yarn bob build
+
+      # The fork's own props must reach the published typings.
+      - name: Check the fork's patches reached lib
+        shell: bash
+        run: |
+          grep -q 'subtitle?: string' lib/typescript/fabric/ScreenStackHeaderConfigNativeComponent.d.ts
+          grep -q 'entry.fi patch, part 4' lib/typescript/types.d.ts
+
+      - name: List the tarball
+        run: npm pack --dry-run --ignore-scripts
+
+      # --ignore-scripts: lib/ is already built; `prepare` would rebuild it and
+      # run `husky install`. --tag latest: npm 11 wants an explicit tag for a
+      # prerelease version.
+      - name: Publish to GitHub Packages
+        run: npm publish --ignore-scripts --tag latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Right after the publish, so a flaky read-back cannot leave a published
+      # version without its tag. The tag points at the built commit; the
+      # version bump above is never committed.
+      - name: Tag the built commit
+        shell: bash
+        run: |
+          git tag "v${VERSION}" "$GITHUB_SHA"
+          git push origin "refs/tags/v${VERSION}"
+
+      - name: Verify the published version
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if npm view "$PACKAGE_SPEC" name version dist.tarball --registry https://npm.pkg.github.com; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::${PACKAGE_SPEC} is not readable from npm.pkg.github.com"
+          exit 1
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write the job summary
+        shell: bash
+        run: |
+          line="\"react-native-screens\": \"npm:${PACKAGE_SPEC}\""
+          echo "Install line: ${line}"
+          {
+            echo "### Published \`${PACKAGE_SPEC}\`"
+            echo
+            echo "Tag: \`v${VERSION}\` on \`${GITHUB_SHA}\`"
+            echo
+            echo "In the app's \`package.json\`:"
+            echo
+            echo '```json'
+            echo "${line}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,105 @@
+# Entry fork: builds lib/ and publishes @entry-fi/react-native-screens to
+# GitHub Packages (npm.pkg.github.com) with the run's own GITHUB_TOKEN.
+#
+# Run it from an `entry/*` branch (Actions → Entry publish → Run workflow, or
+# `gh workflow run entry-publish.yml --ref <branch>`), or push a tag named
+# `v<package.json version>`, e.g. `v4.30.0-entry.1`. Bump `version` in
+# package.json first: a version that is already published is rejected.
+name: Entry publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*-entry.*'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: entry-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'entry-fi/react-native-screens'
+    runs-on: ubuntu-latest
+    env:
+      # Same as upstream's publish-npm.yml.
+      YARN_ENABLE_HARDENED_MODE: 0
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Node 24, like upstream's publish-npm.yml; writes an .npmrc that points
+      # the @entry-fi scope at GitHub Packages and reads NODE_AUTH_TOKEN.
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: yarn
+          registry-url: https://npm.pkg.github.com
+          scope: '@entry-fi'
+
+      - name: Check the package name and version
+        shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          echo "Publishing ${name}@${version}"
+          if [ "$name" != "@entry-fi/react-native-screens" ]; then
+            echo "::error::package.json name is ${name}, expected @entry-fi/react-native-screens"
+            exit 1
+          fi
+          if [ "$REF_TYPE" = "tag" ] && [ "$REF_NAME" != "v${version}" ]; then
+            echo "::error::tag ${REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+          echo "PACKAGE_SPEC=${name}@${version}" >> "$GITHUB_ENV"
+
+      # Yarn 4 (yarnPath) does not run the root `prepare` on install, so the
+      # build is its own step below.
+      - name: Install node dependencies
+        run: yarn install --immutable
+
+      - name: Check types
+        run: yarn check-types
+
+      - name: Build lib
+        run: yarn bob build
+
+      # The fork's own props must reach the published typings.
+      - name: Check the fork's patches reached lib
+        shell: bash
+        run: |
+          grep -q 'subtitle?: string' lib/typescript/fabric/ScreenStackHeaderConfigNativeComponent.d.ts
+          grep -q 'entry.fi patch, part 4' lib/typescript/types.d.ts
+
+      - name: List the tarball
+        run: npm pack --dry-run --ignore-scripts
+
+      # --ignore-scripts: lib/ is already built; `prepare` would rebuild it and
+      # run `husky install`. --tag latest: npm 11 wants an explicit tag for a
+      # prerelease version.
+      - name: Publish to GitHub Packages
+        run: npm publish --ignore-scripts --tag latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the published version
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if npm view "$PACKAGE_SPEC" name version dist.tarball --registry https://npm.pkg.github.com; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::${PACKAGE_SPEC} is not readable from npm.pkg.github.com"
+          exit 1
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
